@@ -210,6 +210,46 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   end,
 })
 
+-- [[ Neotree setup ]]
+-- Run neo-tree automatically when a directory is opened
+vim.api.nvim_create_autocmd('VimEnter', {
+  callback = function()
+    -- Check if Neovim was opened with a directory (not a file)
+    local arg = vim.fn.argv(0)
+    if arg and vim.fn.isdirectory(arg) == 1 then
+      vim.cmd 'Neotree show'
+      vim.defer_fn(function()
+        vim.cmd 'Neotree focus'
+      end, 50)
+    end
+  end,
+})
+
+-- for more potentially nice updates to tree see - https://github.com/nvim-neo-tree/neo-tree.nvim/wiki/Recipes#find-with-telescope
+local function getTelescopeOpts(state, path)
+  return {
+    cwd = path,
+    search_dirs = { path },
+    attach_mappings = function(prompt_bufnr, map)
+      local actions = require 'telescope.actions'
+      actions.select_default:replace(function()
+        actions.close(prompt_bufnr)
+        local action_state = require 'telescope.actions.state'
+        local selection = action_state.get_selected_entry()
+        local filename = selection.filename or selection[1]
+        local line = selection.lnum or 1 -- Default to line 1 if line number isn't provided
+
+        -- Open file in a new buffer and go to specific line
+        vim.api.nvim_command('edit ' .. filename)
+        vim.schedule(function()
+          vim.api.nvim_win_set_cursor(0, { line, 0 })
+        end)
+      end)
+      return true
+    end,
+  }
+end
+
 -- [[ Install `lazy.nvim` plugin manager ]]
 --    See `:help lazy.nvim.txt` or https://github.com/folke/lazy.nvim for more info
 local lazypath = vim.fn.stdpath 'data' .. '/lazy/lazy.nvim'
@@ -365,7 +405,7 @@ require('lazy').setup({
       { 'nvim-telescope/telescope-ui-select.nvim' },
 
       -- Useful for getting pretty icons, but requires a Nerd Font.
-      { 'nvim-tree/nvim-web-devicons', enabled = vim.g.have_nerd_font },
+      { 'nvim-tree/nvim-web-devicons' },
     },
     config = function()
       -- Telescope is a fuzzy finder that comes with a lot of different things that
@@ -934,6 +974,68 @@ require('lazy').setup({
     --    - Show your current context: https://github.com/nvim-treesitter/nvim-treesitter-context
     --    - Treesitter + textobjects: https://github.com/nvim-treesitter/nvim-treesitter-textobjects
   },
+  {
+    'nvim-neo-tree/neo-tree.nvim',
+    version = '*',
+    dependencies = {
+      'nvim-lua/plenary.nvim',
+      'nvim-tree/nvim-web-devicons', -- not strictly required, but recommended
+      'MunifTanjim/nui.nvim',
+      'nvim-telescope/telescope.nvim',
+    },
+    config = function()
+      require('neo-tree').setup {
+        filesystem = {
+          follow_current_file = {
+            enabled = true,
+          },
+          filtered_items = {
+            hide_dotfiles = false,
+            hide_gitignored = false,
+          },
+          window = {
+            mappings = {
+              ['f'] = '',
+              ['ff'] = 'telescope_find',
+              ['fg'] = 'telescope_grep',
+            },
+          },
+        },
+        commands = {
+          telescope_find = function(state)
+            local node = state.tree:get_node()
+            local path = node:get_id()
+            require('telescope.builtin').find_files(getTelescopeOpts(state, path))
+          end,
+          telescope_grep = function(state)
+            local node = state.tree:get_node()
+            local path = node:get_id()
+            require('telescope.builtin').live_grep(getTelescopeOpts(state, path))
+          end,
+        },
+      }
+    end,
+  },
+  {
+    'kdheepak/lazygit.nvim',
+    lazy = true,
+    cmd = {
+      'LazyGit',
+      'LazyGitConfig',
+      'LazyGitCurrentFile',
+      'LazyGitFilter',
+      'LazyGitFilterCurrentFile',
+    },
+    -- optional for floating window border decoration
+    dependencies = {
+      'nvim-lua/plenary.nvim',
+    },
+    -- setting the keybinding for LazyGit with 'keys' is recommended in
+    -- order to load the plugin when the command is run for the first time
+    keys = {
+      { '<leader>lg', '<cmd>LazyGit<cr>', desc = 'LazyGit' },
+    },
+  },
 
   -- The following two comments only work if you have downloaded the kickstart repo, not just copy pasted the
   -- init.lua. If you want these files, they are in the repository, so you can just download them and
@@ -948,7 +1050,7 @@ require('lazy').setup({
   -- require 'kickstart.plugins.indent_line',
   require 'kickstart.plugins.lint',
   -- require 'kickstart.plugins.autopairs',
-  -- require 'kickstart.plugins.neo-tree',
+  --require 'kickstart.plugins.neo-tree',
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
